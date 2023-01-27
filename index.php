@@ -19,6 +19,10 @@ interface IConnectDb{
   function execute(string $sqlQuery, array $params);
 }
 
+interface ISqlInsert{
+  function makeSqlInsert(array $fields, string $table);
+}
+
 abstract class DbConnection implements IConnectDb{
   protected $host;
   protected $dbName;
@@ -26,7 +30,7 @@ abstract class DbConnection implements IConnectDb{
   protected $password;
 }
 
-class MySqlConnection extends DbConnection{
+class MySqlConnection extends DbConnection implements ISqlInsert{
   public static $instance;
 
   public static function getInstance(){
@@ -55,18 +59,31 @@ class MySqlConnection extends DbConnection{
   }
 
   function insert(DbObject $object){
-    return "INSERTING >>> "
+    return "INSERTING >>> ";
+  }
+
+  function makeSqlInsert(array $fields, string $table){
+    $strFieldsParams = implode(", ", $fields);
+    $fieldsParams = array_map(function($field){
+      return ":$field";
+    }, $fields);
+
+    $strFieldsParamsV = implode(", ", $fieldsParams);
+    
+    $result = "INSERT INTO $table($strFieldsParams) VALUES ($strFieldsParamsV);";
+
+    return $result;
   }
 }
 
 class DbManager{
-  public static function insert(DbObject $objInsertable){
-    $connection = MySqlConnection::getInstance();
+  public static function insert(DbObject $objInsertable, DbConnection $connection){
     $fields=$objInsertable->getInsertFields();
-    echo self::makeSQLInsertQuery($objInsertable, $connection);
+    $sqlQuery = $connection->makeSqlInsert(self::getFields($objInsertable), $objInsertable->getTableName());
+    return $connection->execute($sqlQuery, $fields);
   }
 
-  public static function makeSQLInsertQuery(DbObject $objInsertable, DbConnection $connection): string{
+  public static function getFields(DbObject $objInsertable): array{
     $fields=$objInsertable->getInsertFields();
     $fieldsParams = array();
 
@@ -74,21 +91,16 @@ class DbManager{
       array_push($fieldsParams, $field);
     }
 
-    $strFieldsParams = implode(", ", $fieldsParams);
-    $fieldsParams = array_map(function($field){
-      return ":$field";
-    }, $fieldsParams);
-
-    $strFieldsParamsV = implode(", ", $fieldsParams);
-    
-    $result = "INSERT INTO $objInsertable->table($strFieldsParams) VALUES ($strFieldsParamsV);";
-
-    return $connection->execute($result, $fields);
+    return $fieldsParams;
   }
 }
 
 abstract class DbObject implements IActionInsert, IActionList{
   public $table;
+
+  public function getTableName(){
+    return $this->table;
+  }
 
   public function __construct($table){
     $this->table = $table;
@@ -135,14 +147,16 @@ class Categoria extends DbObject{
   }
 }
 
+$connection = MySqlConnection::getInstance();
+
 $producto = new Producto();
 $producto->id = 1;
 $producto->nombre = "Lavadora";
 
-DbManager::insert($producto);
+echo DbManager::insert($producto, $connection);
 
 $categoria = new Categoria();
 $categoria->id = 1;
 $categoria->nombre = "Linea blanca";
 
-DbManager::insert($categoria);
+echo DbManager::insert($categoria, $connection);
